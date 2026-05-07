@@ -725,6 +725,7 @@ struct TabContextMenuState {
     let isBrowser: Bool
     let isTerminal: Bool
     let hasCustomTitle: Bool
+    let hasCustomColor: Bool
     let canCloseToLeft: Bool
     let canCloseToRight: Bool
     let canCloseOthers: Bool
@@ -1197,6 +1198,7 @@ struct TabBarView: View {
             isBrowser: tab.kind == "browser",
             isTerminal: tab.kind == "terminal",
             hasCustomTitle: tab.hasCustomTitle,
+            hasCustomColor: tab.customColorHex != nil,
             canCloseToLeft: canCloseToLeft,
             canCloseToRight: canCloseToRight,
             canCloseOthers: canCloseOthers,

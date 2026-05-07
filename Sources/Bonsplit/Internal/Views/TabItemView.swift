@@ -82,9 +82,7 @@ struct TabItemView: View {
             // Icon + title block uses the standard spacing, but keep the close affordance tight.
             HStack(spacing: TabBarMetrics.contentSpacing) {
                 let iconSlotSize = TabBarMetrics.iconSize
-                let iconTint = isSelected
-                    ? TabBarColors.activeText(for: appearance)
-                    : TabBarColors.inactiveText(for: appearance)
+                let iconTint = foregroundColor
                 let faviconImage = renderedFaviconImage ?? tab.iconImageData.flatMap { NSImage(data: $0) }
 
                 Group {
@@ -135,9 +133,7 @@ struct TabItemView: View {
                     .font(.system(size: appearance.tabTitleFontSize))
                     .lineLimit(1)
                     .foregroundStyle(
-                        isSelected
-                            ? TabBarColors.activeText(for: appearance)
-                            : TabBarColors.inactiveText(for: appearance)
+                        foregroundColor
                     )
                     .saturation(saturation)
 
@@ -348,13 +344,32 @@ struct TabItemView: View {
         return parts.joined(separator: ", ")
     }
 
+    private var customTabColor: NSColor? {
+        tab.customColorHex.flatMap { NSColor(bonsplitHex: $0) }
+    }
+
+    private var foregroundColor: Color {
+        guard let color = customTabColor else {
+            return isSelected
+                ? TabBarColors.activeText(for: appearance)
+                : TabBarColors.inactiveText(for: appearance)
+        }
+        let text = color.isBonsplitLightColor
+            ? NSColor.black.withAlphaComponent(isSelected ? 0.84 : 0.68)
+            : NSColor.white.withAlphaComponent(isSelected ? 0.90 : 0.72)
+        return Color(nsColor: text)
+    }
+
     // MARK: - Tab Background
 
     @ViewBuilder
     private var tabBackground: some View {
         ZStack(alignment: .top) {
             // Background fill (hover)
-            if TabItemStyling.shouldShowHoverBackground(isHovered: isHovered, isSelected: isSelected) {
+            if let customTabColor {
+                Rectangle()
+                    .fill(Color(nsColor: customTabColor.withAlphaComponent(isSelected ? 0.82 : 0.46)))
+            } else if TabItemStyling.shouldShowHoverBackground(isHovered: isHovered, isSelected: isSelected) {
                 Rectangle()
                     .fill(TabBarColors.hoveredTabBackground(for: appearance))
             } else {
@@ -602,6 +617,24 @@ enum TabContextMenuBuilder {
             addAction(
                 title: localized("tabContext.removeCustomTabName", defaultValue: "Remove Custom Tab Name"),
                 action: .clearName,
+                state: state,
+                target: target,
+                to: menu
+            )
+        }
+
+        addAction(
+            title: localized("tabContext.setTabColor", defaultValue: "Tab Color..."),
+            action: .setColor,
+            state: state,
+            target: target,
+            to: menu
+        )
+
+        if state.hasCustomColor {
+            addAction(
+                title: localized("tabContext.clearTabColor", defaultValue: "Clear Tab Color"),
+                action: .clearColor,
                 state: state,
                 target: target,
                 to: menu

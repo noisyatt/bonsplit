@@ -106,6 +106,7 @@ public final class BonsplitController {
     ///   - showsNotificationBadge: Whether the tab shows an "unread/activity" badge
     ///   - isLoading: Whether the tab shows an activity/loading indicator (e.g. spinning icon)
     ///   - isPinned: Whether the tab should be treated as pinned
+    ///   - customColorHex: Optional custom tab color as a hex string
     ///   - pane: Optional pane to add the tab to (defaults to focused pane)
     /// - Returns: The TabID of the created tab, or nil if creation was vetoed by delegate
     @discardableResult
@@ -119,6 +120,7 @@ public final class BonsplitController {
         showsNotificationBadge: Bool = false,
         isLoading: Bool = false,
         isPinned: Bool = false,
+        customColorHex: String? = nil,
         inPane pane: PaneID? = nil
     ) -> TabID? {
         let tabId = TabID()
@@ -132,7 +134,8 @@ public final class BonsplitController {
             isDirty: isDirty,
             showsNotificationBadge: showsNotificationBadge,
             isLoading: isLoading,
-            isPinned: isPinned
+            isPinned: isPinned,
+            customColorHex: customColorHex
         )
         let targetPane = pane ?? focusedPaneId ?? PaneID(id: internalController.rootNode.allPaneIds.first!.id)
 
@@ -169,7 +172,8 @@ public final class BonsplitController {
             isDirty: isDirty,
             showsNotificationBadge: showsNotificationBadge,
             isLoading: isLoading,
-            isPinned: isPinned
+            isPinned: isPinned,
+            customColorHex: customColorHex
         )
         internalController.addTab(tabItem, toPane: PaneID(id: targetPane.id), atIndex: insertIndex)
 
@@ -214,6 +218,7 @@ public final class BonsplitController {
     ///   - showsNotificationBadge: New badge state (pass nil to keep current)
     ///   - isLoading: New loading/busy state (pass nil to keep current)
     ///   - isPinned: New pinned state (pass nil to keep current)
+    ///   - customColorHex: New custom tab color (pass nil to keep current, pass .some(nil) to clear)
     public func updateTab(
         _ tabId: TabID,
         title: String? = nil,
@@ -224,7 +229,8 @@ public final class BonsplitController {
         isDirty: Bool? = nil,
         showsNotificationBadge: Bool? = nil,
         isLoading: Bool? = nil,
-        isPinned: Bool? = nil
+        isPinned: Bool? = nil,
+        customColorHex: String?? = nil
     ) {
         guard let (pane, tabIndex) = findTabInternal(tabId) else { return }
 
@@ -254,6 +260,9 @@ public final class BonsplitController {
         }
         if let isPinned = isPinned {
             pane.tabs[tabIndex].isPinned = isPinned
+        }
+        if let customColorHex = customColorHex {
+            pane.tabs[tabIndex].customColorHex = customColorHex
         }
     }
 

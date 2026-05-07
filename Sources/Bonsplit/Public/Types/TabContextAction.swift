@@ -4,6 +4,8 @@ import Foundation
 public enum TabContextAction: String, CaseIterable, Sendable {
     case rename
     case clearName
+    case setColor
+    case clearColor
     case copyIdentifiers
     case closeToLeft
     case closeToRight
