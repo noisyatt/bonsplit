@@ -77,16 +77,47 @@ struct TabItemView: View {
     @AppStorage(TabControlShortcutHintDebugSettings.yKey) private var controlShortcutHintYOffset = TabControlShortcutHintDebugSettings.defaultY
     @AppStorage(TabControlShortcutHintDebugSettings.alwaysShowKey) private var alwaysShowShortcutHints = TabControlShortcutHintDebugSettings.defaultAlwaysShow
 
+    private struct LeadingBadge: Identifiable, Equatable {
+        enum Kind: Equatable {
+            case account(String)
+            case tmux
+        }
+
+        let id: String
+        let kind: Kind
+    }
+
+    private struct TitlePresentation: Equatable {
+        let badges: [LeadingBadge]
+        let title: String
+        let accountLabel: String?
+        let showsTmuxBadge: Bool
+
+        var hasLeadingStatusIcon: Bool {
+            accountLabel != nil || showsTmuxBadge
+        }
+    }
+
+    private var titlePresentation: TitlePresentation {
+        Self.parseLeadingBadges(from: tab.title)
+    }
+
     var body: some View {
+        let titlePresentation = self.titlePresentation
         HStack(spacing: 0) {
             // Icon + title block uses the standard spacing, but keep the close affordance tight.
             HStack(spacing: TabBarMetrics.contentSpacing) {
                 let iconSlotSize = TabBarMetrics.iconSize
+                let leadingIconSlotDimension = titlePresentation.hasLeadingStatusIcon
+                    ? max(iconSlotSize, min(24, tabHeight - 4))
+                    : iconSlotSize
                 let iconTint = foregroundColor
                 let faviconImage = renderedFaviconImage ?? tab.iconImageData.flatMap { NSImage(data: $0) }
 
                 Group {
-                    if tab.isLoading {
+                    if titlePresentation.hasLeadingStatusIcon {
+                        leadingStatusIcon(titlePresentation: titlePresentation, iconSlotSize: iconSlotSize)
+                    } else if tab.isLoading {
                         // Slightly smaller than the icon slot so it reads cleaner at tab scale.
                         TabLoadingSpinner(size: iconSlotSize * 0.86, color: iconTint)
                     } else if let image = faviconImage {
@@ -113,7 +144,7 @@ struct TabItemView: View {
                     // Prevent incidental parent animations from briefly fading icon content.
                     tx.animation = nil
                 }
-                .frame(width: iconSlotSize, height: iconSlotSize, alignment: .center)
+                .frame(width: leadingIconSlotDimension, height: leadingIconSlotDimension, alignment: .center)
                 .onAppear {
                     updateRenderedFaviconImage()
                     updateGlobeFallback()
@@ -129,7 +160,7 @@ struct TabItemView: View {
                 }
                 .onChange(of: tab.icon) { _ in updateGlobeFallback() }
 
-                Text(tab.title)
+                Text(titlePresentation.title)
                     .font(.system(size: appearance.tabTitleFontSize))
                     .lineLimit(1)
                     .foregroundStyle(
@@ -205,6 +236,134 @@ struct TabItemView: View {
         .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .safeHelp(tab.title)
+    }
+
+    private static func parseLeadingBadges(from rawTitle: String) -> TitlePresentation {
+        let parts = rawTitle
+            .components(separatedBy: " - ")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard parts.count >= 2 else {
+            return TitlePresentation(badges: [], title: rawTitle, accountLabel: nil, showsTmuxBadge: false)
+        }
+
+        var badges: [LeadingBadge] = []
+        var consumed = 0
+        var accountLabel: String?
+        var showsTmuxBadge = false
+        for part in parts {
+            let upper = part.uppercased()
+            if upper.range(of: #"^[AC][1-9]$"#, options: .regularExpression) != nil {
+                badges.append(LeadingBadge(id: "account-\(upper)", kind: .account(upper)))
+                accountLabel = upper
+                consumed += 1
+                continue
+            }
+            if upper == "TMUX" || upper == "MOSH" || upper == "SSH" {
+                badges.append(LeadingBadge(id: "tmux", kind: .tmux))
+                showsTmuxBadge = true
+                consumed += 1
+                continue
+            }
+            break
+        }
+
+        guard !badges.isEmpty, consumed < parts.count else {
+            return TitlePresentation(badges: [], title: rawTitle, accountLabel: nil, showsTmuxBadge: false)
+        }
+
+        let displayTitle = parts.dropFirst(consumed).joined(separator: " - ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return TitlePresentation(
+            badges: badges,
+            title: displayTitle.isEmpty ? rawTitle : displayTitle,
+            accountLabel: accountLabel,
+            showsTmuxBadge: showsTmuxBadge
+        )
+    }
+
+    @ViewBuilder
+    private func leadingStatusIcon(
+        titlePresentation: TitlePresentation,
+        iconSlotSize: CGFloat
+    ) -> some View {
+        let outerSize = min(max(iconSlotSize, 22), tabHeight - 5)
+        let accountLabel = titlePresentation.accountLabel
+        ZStack(alignment: .bottomTrailing) {
+            if let accountLabel {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(accountBadgeFill(for: accountLabel))
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(Color.white.opacity(isSelected ? 0.86 : 0.68), lineWidth: isSelected ? 1.45 : 1.25)
+                    Text(accountLabel)
+                        .font(.system(size: max(10, outerSize * 0.48), weight: .black, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.70)
+                        .foregroundStyle(Color.white)
+                        .frame(width: outerSize - 4, height: outerSize - 4, alignment: .center)
+                }
+                .frame(width: outerSize, height: outerSize)
+                .shadow(color: Color.black.opacity(isSelected ? 0.08 : 0.18), radius: 1, x: 0, y: 0.5)
+                .accessibilityLabel("Account \(accountLabel)")
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(tmuxBadgeFill)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Color.white.opacity(isSelected ? 0.36 : 0.18), lineWidth: 0.8)
+                        Image(systemName: "rectangle.terminal")
+                            .font(.system(size: max(9, outerSize * 0.58), weight: .bold))
+                            .foregroundStyle(Color.white.opacity(0.96))
+                }
+                .frame(width: outerSize, height: outerSize)
+                .accessibilityLabel("tmux")
+            }
+
+            if titlePresentation.showsTmuxBadge, accountLabel == nil {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.18))
+                        Image(systemName: "terminal.fill")
+                            .font(.system(size: max(4.5, outerSize * 0.24), weight: .black))
+                            .foregroundStyle(Color.white)
+                }
+                .frame(width: max(7, outerSize * 0.40), height: max(7, outerSize * 0.40))
+                .accessibilityLabel("tmux")
+            }
+        }
+        .frame(width: outerSize, height: outerSize)
+        .saturation(saturation)
+    }
+
+    private func accountBadgeFill(for label: String) -> Color {
+        let palette: [String: Color] = [
+            "A1": Color(red: 0.10, green: 0.48, blue: 0.98),
+            "A2": Color(red: 0.96, green: 0.20, blue: 0.18),
+            "A3": Color(red: 0.08, green: 0.62, blue: 0.30),
+            "A4": Color(red: 0.94, green: 0.56, blue: 0.10),
+            "A5": Color(red: 0.55, green: 0.28, blue: 0.90),
+            "A6": Color(red: 0.00, green: 0.64, blue: 0.70),
+            "A7": Color(red: 0.86, green: 0.18, blue: 0.48),
+            "A8": Color(red: 0.22, green: 0.32, blue: 0.44),
+            "A9": Color(red: 0.54, green: 0.50, blue: 0.04),
+            "C1": Color(red: 0.11, green: 0.47, blue: 0.96),
+            "C2": Color(red: 0.10, green: 0.64, blue: 0.88),
+            "C3": Color(red: 0.02, green: 0.58, blue: 0.42),
+            "C4": Color(red: 0.52, green: 0.40, blue: 0.96),
+            "C5": Color(red: 0.15, green: 0.32, blue: 0.88),
+            "C6": Color(red: 0.00, green: 0.55, blue: 0.70),
+            "C7": Color(red: 0.64, green: 0.32, blue: 0.96),
+            "C8": Color(red: 0.20, green: 0.36, blue: 0.52),
+            "C9": Color(red: 0.10, green: 0.48, blue: 0.58)
+        ]
+        return palette[label.uppercased()] ?? Color(red: 0.16, green: 0.36, blue: 0.86)
+    }
+
+    private var tmuxBadgeFill: Color {
+        isSelected
+            ? Color.white.opacity(0.58)
+            : Color(nsColor: NSColor.controlAccentColor).opacity(0.72)
     }
 
     private func glyphSize(for iconName: String) -> CGFloat {
